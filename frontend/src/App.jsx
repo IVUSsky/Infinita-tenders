@@ -19,11 +19,22 @@ function scoreBadge(s) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState("RELEVANT");
+  const [tab, setTab] = useState("DRAFTED");
   const [items, setItems] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
+  const [counts, setCounts] = useState({});
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(null);
+
+  async function loadCounts() {
+    const entries = await Promise.all(
+      Object.keys(STATUS).map(async (k) => {
+        const r = await fetch(`${API}/api/tenders?status=${k}`).then((r) => r.json());
+        return [k, r.count || 0];
+      })
+    );
+    return Object.fromEntries(entries);
+  }
 
   async function load() {
     const [t, d] = await Promise.all([
@@ -32,10 +43,23 @@ export default function App() {
     ]);
     setItems(t.items || []);
     setDeadlines(d.items || []);
+    setCounts(await loadCounts());
   }
   useEffect(() => {
     load();
   }, [tab]);
+
+  // При първо зареждане: ако избраният таб е празен, скочи на първия с данни.
+  useEffect(() => {
+    loadCounts().then((c) => {
+      setCounts(c);
+      if (!c[tab]) {
+        const next = ["DRAFTED", "RELEVANT", "NEW", "SKIP"].find((k) => c[k] > 0);
+        if (next) setTab(next);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function trigger(action) {
     setBusy(action);
@@ -89,6 +113,7 @@ export default function App() {
             className={`px-3 py-1.5 text-sm rounded-full ${tab === k ? "ring-2 ring-offset-1" : ""} ${v.color}`}
           >
             {v.label}
+            {counts[k] != null && <span className="ml-1 opacity-60">({counts[k]})</span>}
           </button>
         ))}
       </nav>
