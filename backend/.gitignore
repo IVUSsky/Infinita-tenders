@@ -1,0 +1,6 @@
+node_modules/
+.env
+data/db.json
+data/drafts/
+*.log
+# data/catalog.json СЕ КАЧВА (генерира се от Odoo, нужен е на Railway; private repo)
