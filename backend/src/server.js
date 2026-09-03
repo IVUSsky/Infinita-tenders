@@ -7,7 +7,7 @@ import { db } from "./database/db.js";
 import { runDiscovery } from "./agents/discovery.js";
 import { runClassifier } from "./agents/classifier.js";
 import { runDocumenter } from "./agents/documenter.js";
-import { upcomingDeadlines } from "./agents/deadlines.js";
+import { upcomingDeadlines, runDeadlines } from "./agents/deadlines.js";
 
 const app = express();
 app.use(cors());
@@ -46,6 +46,8 @@ app.get("/api/tenders/:id/draft", (req, res) => {
 app.post("/api/discover", async (_req, res) => res.json(await runDiscovery()));
 app.post("/api/classify", async (_req, res) => res.json(await runClassifier()));
 app.post("/api/document", async (_req, res) => res.json(await runDocumenter()));
+// Ръчно пуска проверката на сроковете + изпраща имейла (за тест)
+app.post("/api/deadlines", async (req, res) => res.json(await runDeadlines(req.body?.withinDays ? { withinDays: Number(req.body.withinDays) } : {})));
 
 // По избор: върти дневния конвейер в същия процес (за Railway — една услуга).
 if (process.env.ENABLE_CRON === "true") {

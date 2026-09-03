@@ -52,7 +52,7 @@ function makeTransport() {
   });
 }
 
-export async function runDeadlines({ withinDays = 7 } = {}) {
+export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHIN_DAYS || 14) } = {}) {
   const due = upcomingDeadlines({ withinDays });
   console.log(`[deadlines] ${due.length} поръчки със срок до ${withinDays} дни`);
   if (!due.length) return { due: 0, items: [] };
