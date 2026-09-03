@@ -9,7 +9,12 @@ export function upcomingDeadlines({ withinDays = 7 } = {}) {
   const horizon = now + withinDays * 86400000;
   return db.data.tenders
     .filter((t) => ["RELEVANT", "DRAFTED"].includes(t.status) && t.deadline)
-    .map((t) => ({ ...t, deadlineTs: Date.parse((t.deadline || "").split(";")[0]) }))
+    // Форматът е "2026-09-23+03:00" (дата + tz, без час) — Date.parse го чупи.
+    // Взимаме само датата (първите 10 знака) и я броим до края на деня (BG време).
+    .map((t) => {
+      const datePart = (t.deadline || "").split(";")[0].trim().slice(0, 10);
+      return { ...t, deadlineTs: Date.parse(`${datePart}T23:59:59+03:00`) };
+    })
     .filter((t) => !Number.isNaN(t.deadlineTs) && t.deadlineTs >= now && t.deadlineTs <= horizon)
     .sort((a, b) => a.deadlineTs - b.deadlineTs);
 }
@@ -19,7 +24,7 @@ function buildEmailHtml(due) {
     .map((t) => {
       const days = Math.ceil((t.deadlineTs - Date.now()) / 86400000);
       return `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee"><b>${t.deadline?.split(";")[0] || ""}</b> (след ${days} дни)</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee"><b>${(t.deadline || "").split(";")[0].slice(0, 10)}</b> (след ${days} дни)</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.buyer || ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.score ?? ""} ${t.status === "DRAFTED" ? "📝" : ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee"><a href="${t.pdfBg || "#"}">PDF</a></td>
