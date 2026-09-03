@@ -1,6 +1,7 @@
 // Агент 4 — СРОКОВЕ. Следи крайните срокове на RELEVANT/DRAFTED поръчки и праща
-// дневно резюме по email (Resend, както в Skyrent). Без ключ — само връща предстоящите.
-import { Resend } from "resend";
+// дневно резюме по email през СОБСТВЕНИЯ SMTP на Infinita (SuperHosting) — без Resend,
+// за да не се смесва с други проекти. Без SMTP env — само връща предстоящите.
+import nodemailer from "nodemailer";
 import { db } from "../database/db.js";
 
 export function upcomingDeadlines({ withinDays = 7 } = {}) {
@@ -36,25 +37,41 @@ function buildEmailHtml(due) {
   </div>`;
 }
 
+// SMTP транспорт (SuperHosting). Подателят ТРЯБВА да е SMTP_USER, иначе SPF пада.
+function smtpConfigured() {
+  return process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.ALERT_EMAIL;
+}
+
+function makeTransport() {
+  const port = Number(process.env.SMTP_PORT || 465);
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port,
+    secure: String(process.env.SMTP_SECURE ?? (port === 465)) === "true" || port === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+}
+
 export async function runDeadlines({ withinDays = 7 } = {}) {
   const due = upcomingDeadlines({ withinDays });
   console.log(`[deadlines] ${due.length} поръчки със срок до ${withinDays} дни`);
+  if (!due.length) return { due: 0, items: [] };
 
-  if (due.length && process.env.RESEND_API_KEY && process.env.ALERT_EMAIL) {
+  if (smtpConfigured()) {
     try {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from: process.env.ALERT_FROM || "Infinita Tenders <onboarding@resend.dev>",
+      const from = process.env.ALERT_FROM || `Infinita Търгове <${process.env.SMTP_USER}>`;
+      await makeTransport().sendMail({
+        from,
         to: process.env.ALERT_EMAIL,
         subject: `🔔 ${due.length} обществени поръчки със срок до ${withinDays} дни`,
         html: buildEmailHtml(due),
       });
-      console.log(`[deadlines] email изпратен до ${process.env.ALERT_EMAIL}`);
+      console.log(`[deadlines] email изпратен до ${process.env.ALERT_EMAIL} (от ${process.env.SMTP_USER})`);
     } catch (err) {
-      console.log(`[deadlines] email грешка: ${err.message}`);
+      console.log(`[deadlines] SMTP грешка: ${err.message}`);
     }
-  } else if (due.length) {
-    console.log("[deadlines] (RESEND_API_KEY/ALERT_EMAIL не са зададени — пропускам email)");
+  } else {
+    console.log("[deadlines] (SMTP_* / ALERT_EMAIL не са зададени — пропускам email)");
   }
   return { due: due.length, items: due };
 }
