@@ -49,19 +49,25 @@ function smtpConfigured() {
 
 function makeTransport() {
   const port = Number(process.env.SMTP_PORT || 465);
+  const secure = String(process.env.SMTP_SECURE ?? "").toLowerCase() === "true" || (process.env.SMTP_SECURE == null && port === 465);
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
-    secure: String(process.env.SMTP_SECURE ?? (port === 465)) === "true" || port === 465,
+    secure,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    // Бързо се предава при блокирана мрежа (SuperHosting от чужд IP) — да не увисва cron-ът/заявката.
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 
 export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHIN_DAYS || 14) } = {}) {
   const due = upcomingDeadlines({ withinDays });
   console.log(`[deadlines] ${due.length} поръчки със срок до ${withinDays} дни`);
-  if (!due.length) return { due: 0, items: [] };
+  if (!due.length) return { due: 0, items: [], email: { sent: false, reason: "няма срокове в прозореца" } };
 
+  let email = { sent: false };
   if (smtpConfigured()) {
     try {
       const from = process.env.ALERT_FROM || `Infinita Търгове <${process.env.SMTP_USER}>`;
@@ -71,12 +77,15 @@ export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHI
         subject: `🔔 ${due.length} обществени поръчки със срок до ${withinDays} дни`,
         html: buildEmailHtml(due),
       });
+      email = { sent: true, to: process.env.ALERT_EMAIL };
       console.log(`[deadlines] email изпратен до ${process.env.ALERT_EMAIL} (от ${process.env.SMTP_USER})`);
     } catch (err) {
+      email = { sent: false, error: err.message };
       console.log(`[deadlines] SMTP грешка: ${err.message}`);
     }
   } else {
+    email = { sent: false, reason: "SMTP не е конфигуриран" };
     console.log("[deadlines] (SMTP_* / ALERT_EMAIL не са зададени — пропускам email)");
   }
-  return { due: due.length, items: due };
+  return { due: due.length, items: due, email };
 }
