@@ -1,7 +1,8 @@
 // Агент 4 — СРОКОВЕ. Следи крайните срокове на RELEVANT/DRAFTED поръчки и праща
-// дневно резюме по email през СОБСТВЕНИЯ SMTP на Infinita (SuperHosting) — без Resend,
-// за да не се смесва с други проекти. Без SMTP env — само връща предстоящите.
-import nodemailer from "nodemailer";
+// дневно резюме по email през ОТДЕЛЕН Resend акаунт за Infinita (не се смесва със Skyrent).
+// SuperHosting SMTP не работи от облака (Railway IP блокиран) → Resend праща отвсякъде.
+// Без RESEND_API_KEY — само връща предстоящите.
+import { Resend } from "resend";
 import { db } from "../database/db.js";
 
 export function upcomingDeadlines({ withinDays = 7 } = {}) {
@@ -19,7 +20,7 @@ export function upcomingDeadlines({ withinDays = 7 } = {}) {
     .sort((a, b) => a.deadlineTs - b.deadlineTs);
 }
 
-function buildEmailHtml(due) {
+function buildEmailHtml(due, withinDays) {
   const rows = due
     .map((t) => {
       const days = Math.ceil((t.deadlineTs - Date.now()) / 86400000);
@@ -33,7 +34,7 @@ function buildEmailHtml(due) {
     .join("");
   return `<div style="font-family:sans-serif">
     <h2>Обществени поръчки — предстоящи срокове</h2>
-    <p>${due.length} релевантни поръчки със срок до 7 дни:</p>
+    <p>${due.length} релевантни поръчки със срок до ${withinDays} дни:</p>
     <table style="border-collapse:collapse;width:100%">
       <tr style="text-align:left;background:#f5f5f5"><th style="padding:6px 10px">Срок</th><th style="padding:6px 10px">Възложител</th><th style="padding:6px 10px">Score</th><th style="padding:6px 10px">Досие</th></tr>
       ${rows}
@@ -42,24 +43,8 @@ function buildEmailHtml(due) {
   </div>`;
 }
 
-// SMTP транспорт (SuperHosting). Подателят ТРЯБВА да е SMTP_USER, иначе SPF пада.
-function smtpConfigured() {
-  return process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.ALERT_EMAIL;
-}
-
-function makeTransport() {
-  const port = Number(process.env.SMTP_PORT || 465);
-  const secure = String(process.env.SMTP_SECURE ?? "").toLowerCase() === "true" || (process.env.SMTP_SECURE == null && port === 465);
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port,
-    secure,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    // Бързо се предава при блокирана мрежа (SuperHosting от чужд IP) — да не увисва cron-ът/заявката.
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
+function emailConfigured() {
+  return process.env.RESEND_API_KEY && process.env.ALERT_EMAIL;
 }
 
 export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHIN_DAYS || 14) } = {}) {
@@ -68,24 +53,26 @@ export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHI
   if (!due.length) return { due: 0, items: [], email: { sent: false, reason: "няма срокове в прозореца" } };
 
   let email = { sent: false };
-  if (smtpConfigured()) {
+  if (emailConfigured()) {
     try {
-      const from = process.env.ALERT_FROM || `Infinita Търгове <${process.env.SMTP_USER}>`;
-      await makeTransport().sendMail({
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const from = process.env.ALERT_FROM || "Infinita Търгове <onboarding@resend.dev>";
+      const r = await resend.emails.send({
         from,
         to: process.env.ALERT_EMAIL,
         subject: `🔔 ${due.length} обществени поръчки със срок до ${withinDays} дни`,
-        html: buildEmailHtml(due),
+        html: buildEmailHtml(due, withinDays),
       });
-      email = { sent: true, to: process.env.ALERT_EMAIL };
-      console.log(`[deadlines] email изпратен до ${process.env.ALERT_EMAIL} (от ${process.env.SMTP_USER})`);
+      if (r.error) throw new Error(r.error.message || JSON.stringify(r.error));
+      email = { sent: true, to: process.env.ALERT_EMAIL, id: r.data?.id };
+      console.log(`[deadlines] email изпратен до ${process.env.ALERT_EMAIL} (id ${r.data?.id})`);
     } catch (err) {
       email = { sent: false, error: err.message };
-      console.log(`[deadlines] SMTP грешка: ${err.message}`);
+      console.log(`[deadlines] Resend грешка: ${err.message}`);
     }
   } else {
-    email = { sent: false, reason: "SMTP не е конфигуриран" };
-    console.log("[deadlines] (SMTP_* / ALERT_EMAIL не са зададени — пропускам email)");
+    email = { sent: false, reason: "RESEND_API_KEY/ALERT_EMAIL не са зададени" };
+    console.log("[deadlines] (RESEND_API_KEY/ALERT_EMAIL не са зададени — пропускам email)");
   }
   return { due: due.length, items: due, email };
 }
