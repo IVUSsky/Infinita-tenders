@@ -20,26 +20,31 @@ export function upcomingDeadlines({ withinDays = 7 } = {}) {
     .sort((a, b) => a.deadlineTs - b.deadlineTs);
 }
 
-function buildEmailHtml(due, withinDays) {
+function buildEmailHtml(due) {
   const rows = due
     .map((t) => {
       const days = Math.ceil((t.deadlineTs - Date.now()) / 86400000);
+      const urgent = days <= 7;
+      const dateCell = urgent
+        ? `<b style="color:#c0392b">⚠️ ${(t.deadline || "").split(";")[0].slice(0, 10)}</b>`
+        : `<b>${(t.deadline || "").split(";")[0].slice(0, 10)}</b>`;
       return `<tr>
-        <td style="padding:6px 10px;border-bottom:1px solid #eee"><b>${(t.deadline || "").split(";")[0].slice(0, 10)}</b> (след ${days} дни)</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee">${dateCell} (след ${days} ${days === 1 ? "ден" : "дни"})</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.buyer || ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.score ?? ""} ${t.status === "DRAFTED" ? "📝" : ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee"><a href="${t.pdfBg || "#"}">PDF</a></td>
       </tr>`;
     })
     .join("");
+  const urgentCount = due.filter((t) => Math.ceil((t.deadlineTs - Date.now()) / 86400000) <= 7).length;
   return `<div style="font-family:sans-serif">
-    <h2>Обществени поръчки — предстоящи срокове</h2>
-    <p>${due.length} релевантни поръчки със срок до ${withinDays} дни:</p>
+    <h2>Актуални подходящи обществени поръчки</h2>
+    <p>${due.length} подходящи поръчки с още отворен срок${urgentCount ? ` (<b style="color:#c0392b">${urgentCount} спешни</b> — до 7 дни)` : ""}:</p>
     <table style="border-collapse:collapse;width:100%">
       <tr style="text-align:left;background:#f5f5f5"><th style="padding:6px 10px">Срок</th><th style="padding:6px 10px">Възложител</th><th style="padding:6px 10px">Score</th><th style="padding:6px 10px">Досие</th></tr>
       ${rows}
     </table>
-    <p style="color:#888;font-size:12px">Генерирано от infinita-tenders. Подаването в ЦАИС ЕОП изисква КЕП.</p>
+    <p style="color:#888;font-size:12px">Генерирано от infinita-tenders. 📝 = има готова чернова. Подаването в ЦАИС ЕОП изисква КЕП.</p>
   </div>`;
 }
 
@@ -47,11 +52,13 @@ function emailConfigured() {
   return process.env.RESEND_API_KEY && process.env.ALERT_EMAIL;
 }
 
-export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHIN_DAYS || 14) } = {}) {
+// По подразбиране покрива ВСИЧКИ още отворени подходящи търгове (не само близките).
+export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHIN_DAYS || 3650) } = {}) {
   const due = upcomingDeadlines({ withinDays });
-  console.log(`[deadlines] ${due.length} поръчки със срок до ${withinDays} дни`);
-  if (!due.length) return { due: 0, items: [], email: { sent: false, reason: "няма срокове в прозореца" } };
+  console.log(`[deadlines] ${due.length} актуални подходящи поръчки (прозорец ${withinDays} дни)`);
+  if (!due.length) return { due: 0, items: [], email: { sent: false, reason: "няма актуални подходящи търгове" } };
 
+  const urgent = due.filter((t) => Math.ceil((t.deadlineTs - Date.now()) / 86400000) <= 7).length;
   let email = { sent: false };
   if (emailConfigured()) {
     try {
@@ -60,8 +67,8 @@ export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHI
       const r = await resend.emails.send({
         from,
         to: process.env.ALERT_EMAIL,
-        subject: `🔔 ${due.length} обществени поръчки със срок до ${withinDays} дни`,
-        html: buildEmailHtml(due, withinDays),
+        subject: `🔔 ${due.length} подходящи обществени поръчки${urgent ? ` · ${urgent} спешни` : ""}`,
+        html: buildEmailHtml(due),
       });
       if (r.error) throw new Error(r.error.message || JSON.stringify(r.error));
       email = { sent: true, to: process.env.ALERT_EMAIL, id: r.data?.id };
