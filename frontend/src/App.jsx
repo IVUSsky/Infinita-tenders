@@ -9,6 +9,7 @@ const STATUS = {
   RELEVANT: { label: "Релевантни", color: "bg-amber-100 text-amber-800" },
   DRAFTED: { label: "С чернова", color: "bg-emerald-100 text-emerald-800" },
   SKIP: { label: "Пропуснати", color: "bg-slate-100 text-slate-400" },
+  DISMISSED: { label: "Отпаднали", color: "bg-slate-100 text-slate-400" },
 };
 
 function scoreBadge(s) {
@@ -71,6 +72,11 @@ export default function App() {
   async function openDraft(id) {
     const md = await fetch(`${API}/api/tenders/${id}/draft`).then((r) => r.text());
     setDraft({ id, md });
+  }
+
+  async function setDismiss(id, action) {
+    await fetch(`${API}/api/tenders/${id}/${action}`, { method: "POST" });
+    load();
   }
 
   return (
@@ -154,6 +160,21 @@ export default function App() {
                     style={{ background: BLUE }}
                   >
                     📝 Чернова
+                  </button>
+                )}
+                {t.status === "DISMISSED" ? (
+                  <button
+                    onClick={() => setDismiss(t.id, "restore")}
+                    className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200"
+                  >
+                    ↩ Върни
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setDismiss(t.id, "dismiss")}
+                    className="text-xs px-2 py-1 rounded bg-rose-50 text-rose-600 hover:bg-rose-100"
+                  >
+                    ✕ Отпадни
                   </button>
                 )}
               </div>

@@ -49,20 +49,48 @@ app.post("/api/document", async (_req, res) => res.json(await runDocumenter()));
 // Ръчно пуска проверката на сроковете + изпраща имейла (за тест)
 app.post("/api/deadlines", async (req, res) => res.json(await runDeadlines(req.body?.withinDays ? { withinDays: Number(req.body.withinDays) } : {})));
 
+// Отписва поръчка (отпада) — изключва я от дашборда и автоматичните имейли.
+app.post("/api/tenders/:id/dismiss", async (req, res) => {
+  const t = db.data.tenders.find((x) => x.id === req.params.id);
+  if (!t) return res.status(404).json({ error: "няма такава поръчка" });
+  if (t.status !== "DISMISSED") {
+    t.prevStatus = t.status;
+    t.status = "DISMISSED";
+    await db.write();
+  }
+  res.json({ ok: true, id: t.id, status: t.status });
+});
+// Връща отписана поръчка обратно към предишния ѝ статус.
+app.post("/api/tenders/:id/restore", async (req, res) => {
+  const t = db.data.tenders.find((x) => x.id === req.params.id);
+  if (!t) return res.status(404).json({ error: "няма такава поръчка" });
+  if (t.status === "DISMISSED") {
+    t.status = t.prevStatus || "RELEVANT";
+    delete t.prevStatus;
+    await db.write();
+  }
+  res.json({ ok: true, id: t.id, status: t.status });
+});
+
 // По избор: върти дневния конвейер в същия процес (за Railway — една услуга).
 if (process.env.ENABLE_CRON === "true") {
   const cron = (await import("node-cron")).default;
-  const schedule = process.env.CRON_SCHEDULE || "0 7 * * *";
-  cron.schedule(schedule, async () => {
-    console.log(`[cron] старт ${new Date().toISOString()}`);
-    await runDiscovery();
-    await runClassifier();
-    await runDocumenter();
-    const { runDeadlines } = await import("./agents/deadlines.js");
-    await runDeadlines();
-    console.log("[cron] готово");
-  });
-  console.log(`[cron] планиран в процеса: ${schedule}`);
+  const schedule = process.env.CRON_SCHEDULE || "0 10 * * 1-5"; // работни дни 10:00
+  const timezone = process.env.TZ || "Europe/Sofia";
+  cron.schedule(
+    schedule,
+    async () => {
+      console.log(`[cron] старт ${new Date().toISOString()}`);
+      await runDiscovery();
+      await runClassifier();
+      await runDocumenter();
+      const { runDeadlines } = await import("./agents/deadlines.js");
+      await runDeadlines();
+      console.log("[cron] готово");
+    },
+    { timezone }
+  );
+  console.log(`[cron] планиран в процеса: ${schedule} (${timezone})`);
 }
 
 const PORT = process.env.PORT || 4010;

@@ -64,9 +64,11 @@ export async function runDeadlines({ withinDays = Number(process.env.ALERT_WITHI
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
       const from = process.env.ALERT_FROM || "Infinita Търгове <onboarding@resend.dev>";
+      // ALERT_EMAIL може да е няколко адреса, разделени със запетая.
+      const to = process.env.ALERT_EMAIL.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await resend.emails.send({
         from,
-        to: process.env.ALERT_EMAIL,
+        to,
         subject: `🔔 ${due.length} подходящи обществени поръчки${urgent ? ` · ${urgent} спешни` : ""}`,
         html: buildEmailHtml(due),
       });
