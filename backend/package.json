@@ -13,6 +13,7 @@
     "document": "node src/cli.js document",
     "document:dry": "node src/cli.js document:dry",
     "export-catalog": "ssh -i ~/.ssh/id_ed25519 root@137.184.205.160 \"sudo -u postgres psql -d infinita17_test -tAX\" < scripts/export-catalog.sql > data/catalog.json",
+    "market": "node src/cli.js market",
     "pipeline": "node src/cli.js pipeline",
     "cron": "node cron/daily.js"
   },

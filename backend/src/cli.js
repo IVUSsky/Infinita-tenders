@@ -34,6 +34,17 @@ const steps = {
     await runDocumenter();
     await runDeadlines();
   },
+  // Пазарен анализ назад във времето. По избор: npm run market -- 2025-10-01 2026-10-20
+  market: async () => {
+    const { buildMarket } = await import("./analytics/market.js");
+    const [, , , from, to] = process.argv;
+    const m = await buildMarket({ ...(from ? { from } : {}), ...(to ? { to } : {}) });
+    console.log(
+      `\nПазар ${m.period.from} – ${m.period.to}: ${m.kpi.totalEur.toLocaleString("bg-BG")} € в ${m.kpi.lots} позиции ` +
+      `при ${m.kpi.buyers} възложителя · ${m.kpi.singleBid}/${m.kpi.lots} с една оферта · ` +
+      `медиана ${m.kpi.medianDeal.toLocaleString("bg-BG")} €`
+    );
+  },
 };
 
 const fn = steps[cmd];

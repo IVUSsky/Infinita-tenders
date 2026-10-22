@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Market from "./Market.jsx";
 
 const BLUE = "rgb(27,117,188)"; // фирменото синьо на Infinita
 // В dev: празно → Vite proxy-то праща /api към :4010. В прод: VITE_API_URL = URL на backend-а.
@@ -20,6 +21,7 @@ function scoreBadge(s) {
 }
 
 export default function App() {
+  const [view, setView] = useState("tenders"); // tenders = напред във времето, market = назад
   const [tab, setTab] = useState("DRAFTED");
   const [items, setItems] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
@@ -80,13 +82,13 @@ export default function App() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <header className="flex items-center justify-between mb-6">
+    <div className={`${view === "market" ? "max-w-7xl" : "max-w-5xl"} mx-auto p-6`}>
+      <header className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold" style={{ color: BLUE }}>
           Infinita · Обществени поръчки
         </h1>
         <div className="flex gap-2">
-          {["discover", "classify", "document"].map((a) => (
+          {view === "tenders" && ["discover", "classify", "document"].map((a) => (
             <button
               key={a}
               onClick={() => trigger(a)}
@@ -100,6 +102,29 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="flex gap-1 mb-5 border-b border-slate-200">
+        {[
+          ["tenders", "Текущи поръчки", "какво да офертираме"],
+          ["market", "Пазарен анализ", "кой спечели и на каква цена"],
+        ].map(([k, label, hint]) => (
+          <button
+            key={k}
+            onClick={() => setView(k)}
+            title={hint}
+            className={`px-4 py-2 text-sm -mb-px border-b-2 ${
+              view === k ? "font-semibold" : "border-transparent text-slate-400 hover:text-slate-600"
+            }`}
+            style={view === k ? { borderColor: BLUE, color: BLUE } : undefined}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      {view === "market" && <Market />}
+
+      {view === "tenders" && (
+      <>
       {deadlines.length > 0 && (
         <div className="mb-5 p-3 rounded-lg bg-rose-50 border border-rose-200 text-sm">
           🔔 <b>{deadlines.length}</b> релевантни поръчки със срок до 14 дни:{" "}
@@ -201,6 +226,8 @@ export default function App() {
             <pre className="whitespace-pre-wrap text-xs font-mono leading-relaxed">{draft.md}</pre>
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   );

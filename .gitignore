@@ -2,3 +2,9 @@ node_modules/
 .env
 *.log
 .DS_Store
+
+# данни, които се генерират локално/на сървъра
+backend/data/db.json
+backend/data/drafts/
+backend/data/notice-xml/
+backend/data/market.json

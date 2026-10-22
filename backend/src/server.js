@@ -8,6 +8,7 @@ import { runDiscovery } from "./agents/discovery.js";
 import { runClassifier } from "./agents/classifier.js";
 import { runDocumenter } from "./agents/documenter.js";
 import { upcomingDeadlines, runDeadlines } from "./agents/deadlines.js";
+import { buildMarket, readMarket } from "./analytics/market.js";
 
 const app = express();
 app.use(cors());
@@ -40,6 +41,46 @@ app.get("/api/tenders/:id/draft", (req, res) => {
   } catch {
     res.status(404).json({ error: "файлът липсва" });
   }
+});
+
+// --- Пазарен анализ (назад във времето: кой спечели, на каква цена, срещу колко оферти) ---
+
+// Обобщенията без редовете — това зарежда дашбордът.
+app.get("/api/market", (_req, res) => {
+  const m = readMarket();
+  if (!m) return res.status(404).json({ error: "няма изчислен анализ — пусни POST /api/market/refresh" });
+  const { rows, ...rest } = m;
+  res.json(rest);
+});
+
+// Редовете, по избор филтрирани: ?class=APARAT&status=Отворена
+app.get("/api/market/rows", (req, res) => {
+  const m = readMarket();
+  if (!m) return res.status(404).json({ error: "няма изчислен анализ" });
+  let rows = m.rows;
+  if (req.query.class) rows = rows.filter((r) => r.class === req.query.class);
+  if (req.query.status) rows = rows.filter((r) => r.status === req.query.status);
+  if (req.query.winner) rows = rows.filter((r) => (r.winners || "").toLowerCase().includes(String(req.query.winner).toLowerCase()));
+  res.json({ count: rows.length, rows });
+});
+
+// Преизчислява от TED. Бавно (минути) — затова отговаря веднага и работи на заден план.
+let marketRunning = false;
+app.post("/api/market/refresh", (req, res) => {
+  if (marketRunning) return res.status(409).json({ error: "вече тече преизчисляване" });
+  marketRunning = true;
+  const opts = {};
+  if (req.body?.from) opts.from = req.body.from;
+  if (req.body?.to) opts.to = req.body.to;
+  buildMarket(opts)
+    .catch((err) => console.error("[market] провал:", err.message))
+    .finally(() => { marketRunning = false; });
+  res.json({ ok: true, started: true, note: "преизчисляването тече; след няколко минути GET /api/market ще върне новите данни" });
+});
+
+app.get("/api/market/status", (_req, res) => {
+  const m = readMarket();
+  res.json({ running: marketRunning, generatedAt: m?.generatedAt || null, stats: m?.stats || null });
 });
 
 // Ръчни тригери (за бутони в дашборда)
