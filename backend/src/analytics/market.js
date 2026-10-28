@@ -431,14 +431,20 @@ export async function buildMarket({ from = "2025-10-01", to = new Date().toISOSt
   const prev = readMarket();
   if (!rows.length && failed > 0) {
     const summary = Object.entries(reasons).map(([k, n]) => `${k} × ${n}`).join("; ");
+    // Разпознаваме точно случая „в облака сме": тогава съобщението казва какво да се
+    // прави, вместо да оставя някой да гадае както гадаех аз.
+    const cloudBlocked = Object.keys(reasons).some((k) => k.startsWith("не е XML"));
+    const hint = cloudBlocked
+      ? "ted.europa.eu отдава XML само на домашни IP-та — от сървъра връща празен HTML. Построй локално с `npm run market` и качи data/market.json в repo-то."
+      : summary;
     console.error(`[market] ПРОВАЛ: 0 позиции, ${failed} от ${notices.length} обявления не се свалиха — ${summary}`);
     if (prev?.rows?.length) {
       console.error(`[market] запазвам предишния анализ (${prev.rows.length} позиции) — файлът НЕ се пренаписва`);
       return { ...prev, stats: { ...prev.stats, lastFailure: { at: new Date().toISOString(), failed, notices: notices.length, failureReasons: reasons } } };
     }
     mkdirSync(dirname(MARKET_PATH), { recursive: true });
-    writeFileSync(MARKET_PATH, JSON.stringify({ ...payload, error: `всички ${failed} обявления се провалиха при сваляне`, failureReasons: reasons }, null, 1));
-    return { ...payload, error: `всички ${failed} обявления се провалиха при сваляне` };
+    writeFileSync(MARKET_PATH, JSON.stringify({ ...payload, error: hint, failureReasons: reasons }, null, 1));
+    return { ...payload, error: hint };
   }
 
   mkdirSync(dirname(MARKET_PATH), { recursive: true });
@@ -448,11 +454,20 @@ export async function buildMarket({ from = "2025-10-01", to = new Date().toISOSt
   return payload;
 }
 
+// Копието в repo-то, което се носи с деплоя — същият похват като data/catalog.json.
+// Нужно е, защото сайтът ted.europa.eu отдава XML само на „домашни" IP-та: от Railway
+// връща HTTP 200 с тип text/html и ПРАЗНО тяло (измерено 28.10.2026, 464 от 464).
+// Затова справката се строи локално, където сваляното работи, и се качва в repo-то.
+const SEED_MARKET = join("./data", "market.json");
+
 export function readMarket() {
-  if (!existsSync(MARKET_PATH)) return null;
-  try {
-    return JSON.parse(readFileSync(MARKET_PATH, "utf8"));
-  } catch {
-    return null;
+  // Дискът има предимство: ако някой е преизчислил на сървъра, това е по-свежото.
+  for (const p of [MARKET_PATH, SEED_MARKET]) {
+    if (!existsSync(p)) continue;
+    try {
+      const m = JSON.parse(readFileSync(p, "utf8"));
+      if (m?.rows?.length) return { ...m, source: p === MARKET_PATH ? "диск" : "repo" };
+    } catch { /* повреден файл — пробвай следващия */ }
   }
+  return null;
 }

@@ -7,5 +7,8 @@ node_modules/
 backend/data/db.json
 backend/data/drafts/
 backend/data/notice-xml/
-backend/data/market.json
+# market.json СЕ качва: справката се строи локално, защото ted.europa.eu отдава
+# XML само на домашни IP-та (от Railway: HTTP 200, text/html, празно тяло).
+# Дискът на сървъра има предимство, ако някой преизчисли там.
+# backend/data/market.json
 backend/data/db.json.bak-*
