@@ -7,7 +7,7 @@ import { db } from "./database/db.js";
 import { runDiscovery } from "./agents/discovery.js";
 import { runClassifier } from "./agents/classifier.js";
 import { runDocumenter } from "./agents/documenter.js";
-import { upcomingDeadlines, runDeadlines } from "./agents/deadlines.js";
+import { upcomingDeadlines, withoutDeadline, runDeadlines } from "./agents/deadlines.js";
 import { buildMarket, readMarket } from "./analytics/market.js";
 import { KEYWORD_GROUPS, EXCLUDED_TERMS, activeKeywords } from "./config/keywords.js";
 import { SEARCH_CPV, INFINITA_CPV } from "./config/cpv.js";
@@ -29,7 +29,8 @@ app.get("/api/tenders", (req, res) => {
 
 app.get("/api/deadlines", (req, res) => {
   const within = Number(req.query.days || 7);
-  res.json({ items: upcomingDeadlines({ withinDays: within }) });
+  // noDeadline са подходящите поръчки без обявен срок в TED — иначе не се виждат никъде.
+  res.json({ items: upcomingDeadlines({ withinDays: within }), noDeadline: withoutDeadline() });
 });
 
 app.get("/api/runs", (_req, res) => res.json({ runs: db.data.runs.slice(0, 50) }));
