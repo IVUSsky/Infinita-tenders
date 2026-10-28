@@ -156,6 +156,15 @@ async function fetchXml(id, attempt = 0) {
     return null;
   }
   const text = await res.text();
+  // HTTP 200 не значи XML. Ако отговорът е HTML страница (съгласие, проверка, грешка),
+  // старият код я записваше в кеша и после разборът ѝ гърмеше при всяко пускане —
+  // веднъж поставена в кеша, лошата страница се ползваше вечно. Затова се проверява
+  // съдържанието и НЕ се кешира нищо, което не е XML.
+  const head = text.slice(0, 400);
+  if (!/^\s*<\?xml/.test(head) && !/<(TED_EXPORT|efac:|cac:|\w+:ContractNotice|\w+:ContractAwardNotice)/.test(head)) {
+    noteFailure(`не е XML (${res.headers.get("content-type") || "без тип"}): ${head.replace(/\s+/g, " ").slice(0, 90)}`);
+    return null;
+  }
   writeFileSync(path, text);
   return text;
 }
@@ -395,6 +404,9 @@ export async function buildMarket({ from = "2025-10-01", to = new Date().toISOSt
       raw.push(...extractRows(id, xml, meta));
     } catch (err) {
       failed++;
+      // Без това провалът при РАЗБОР не оставяше следа в stats и 464 грешки
+      // изглеждаха като провал при сваляне.
+      noteFailure(`разбор: ${err.message}`);
       console.error(`[market] ${id}: ${err.message}`);
     }
   }
