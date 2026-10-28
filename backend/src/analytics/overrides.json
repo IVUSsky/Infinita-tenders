@@ -2567,5 +2567,89 @@
   "klas": "неясно",
   "broj": null,
   "note": "Решение (can-social) по профилактичните прегледи, ТП на НОИ Кърджали — прекратена с 1 оферта."
+ },
+ "748393-2025|LOT-0009": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "SERVIZ",
+  "note": "сервиз на ултразвукови апарати и рентген GE, УМБАЛ Св. Георги Пловдив"
+ },
+ "42111-2026|LOT-0001": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "SERVIZ",
+  "note": "сервиз на образна диагностика GE Healthcare; позицията включва и КТ инжектор"
+ },
+ "179363-2026|LOT-0005": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "SERVIZ",
+  "note": "извънгаранционна поддръжка на ултразвукова система ARIETTA 750-VE (Пирогов)"
+ },
+ "401101-2026|LOT-0024": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "SERVIZ",
+  "note": "сервиз на 3 ехографа Siemens ACUSON (P500, NX3 Elite, Juniper)"
+ },
+ "390444-2026|LOT-0024": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "SERVIZ",
+  "note": "сервиз на ехографи Siemens ACUSON"
+ },
+ "401101-2026|LOT-0007": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "DRUG_APARAT",
+  "note": "сервиз на ангиографска система Canon Alphenix — не е ехограф"
+ },
+ "458567-2026|LOT-0001": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "DRUG_APARAT",
+  "note": "сервиз на ангиографска система — не е ехограф"
+ },
+ "401101-2026|LOT-0014": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "NERELEVANT",
+  "note": "реанимационни апарати"
+ },
+ "460364-2026|LOT-0001": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "NERELEVANT",
+  "note": "реанимационни апарати"
+ },
+ "401101-2026|LOT-0020": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "NERELEVANT",
+  "note": "стерилизационна апаратура Getinge"
+ },
+ "457237-2026|LOT-0001": {
+  "vet": false,
+  "klas": "",
+  "broj": null,
+  "class": "NERELEVANT",
+  "note": "стерилизационна апаратура Getinge"
+ },
+ "737138-2026|LOT-0001": {
+  "vet": false,
+  "klas": "висок",
+  "broj": 1,
+  "class": "APARAT",
+  "note": "високоспециализиран ултразвуков апарат за АГ и фетална медицина, МЦ Лозенец"
  }
 }
