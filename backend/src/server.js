@@ -94,21 +94,24 @@ app.get("/api/market/rows", (req, res) => {
 
 // Преизчислява от TED. Бавно (минути) — затова отговаря веднага и работи на заден план.
 let marketRunning = false;
+let marketLastError = null;
 app.post("/api/market/refresh", (req, res) => {
   if (marketRunning) return res.status(409).json({ error: "вече тече преизчисляване" });
   marketRunning = true;
   const opts = {};
   if (req.body?.from) opts.from = req.body.from;
   if (req.body?.to) opts.to = req.body.to;
+  marketLastError = null;
   buildMarket(opts)
-    .catch((err) => console.error("[market] провал:", err.message))
+    .then((p) => { if (p?.error) marketLastError = p.error; })
+    .catch((err) => { marketLastError = err.message; console.error("[market] провал:", err.message); })
     .finally(() => { marketRunning = false; });
   res.json({ ok: true, started: true, note: "преизчисляването тече; след няколко минути GET /api/market ще върне новите данни" });
 });
 
 app.get("/api/market/status", (_req, res) => {
   const m = readMarket();
-  res.json({ running: marketRunning, generatedAt: m?.generatedAt || null, stats: m?.stats || null });
+  res.json({ running: marketRunning, generatedAt: m?.generatedAt || null, stats: m?.stats || null, error: marketLastError || m?.error || null });
 });
 
 // Ръчни тригери (за бутони в дашборда)

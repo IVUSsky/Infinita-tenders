@@ -127,16 +127,34 @@ export async function findNotices({ from, to }) {
 
 /* --------------------------------------------------- 2. сваляне на XML-ите */
 
+// Причините за провалите се трупат тук и влизат в stats. Дотук fetchXml връщаше само
+// null, викащият увеличаваше брояч и анализът се записваше с НУЛА реда, докладвайки
+// успех — точно това се случи при първото пускане на ПРОД (464 от 464 провалени, без
+// никаква следа защо).
+export const fetchFailures = new Map();
+const noteFailure = (key) => fetchFailures.set(key, (fetchFailures.get(key) || 0) + 1);
+
 async function fetchXml(id, attempt = 0) {
   mkdirSync(XML_CACHE, { recursive: true });
   const path = join(XML_CACHE, `${id}.xml`);
   if (existsSync(path) && readFileSync(path, "utf8").length > 2000) return readFileSync(path, "utf8");
-  const res = await fetch(`https://ted.europa.eu/en/notice/${id}/xml`);
+  let res;
+  try {
+    // Внимание: това е САЙТЪТ ted.europa.eu, не api.ted.europa.eu. Откриването през
+    // API-то работи от Railway от месеци, но този адрес отказва оттам.
+    res = await fetch(`https://ted.europa.eu/en/notice/${id}/xml`);
+  } catch (err) {
+    noteFailure(`мрежова грешка: ${err.message}`);
+    return null;
+  }
   if ((res.status === 429 || res.status >= 500) && attempt < 5) {
     await sleep(3000 * (attempt + 1));
     return fetchXml(id, attempt + 1);
   }
-  if (!res.ok) return null;
+  if (!res.ok) {
+    noteFailure(`HTTP ${res.status}${res.statusText ? " " + res.statusText : ""}`);
+    return null;
+  }
   const text = await res.text();
   writeFileSync(path, text);
   return text;
@@ -368,6 +386,7 @@ export async function buildMarket({ from = "2025-10-01", to = new Date().toISOSt
 
   const raw = [];
   let failed = 0;
+  fetchFailures.clear();
   for (const meta of notices) {
     const id = meta["publication-number"];
     const xml = await fetchXml(id);
@@ -383,15 +402,37 @@ export async function buildMarket({ from = "2025-10-01", to = new Date().toISOSt
   const rows = consolidate(raw).sort((a, b) =>
     (b.awardPub || b.announced).localeCompare(a.awardPub || a.announced));
   const agg = aggregate(rows, { from, to });
+  const reasons = Object.fromEntries([...fetchFailures.entries()].sort((a, b) => b[1] - a[1]));
   const payload = {
     ...agg,
-    stats: { notices: notices.length, lotRows: raw.length, rows: rows.length, failed, ms: Date.now() - started },
+    stats: {
+      notices: notices.length, lotRows: raw.length, rows: rows.length, failed,
+      ms: Date.now() - started,
+      // Защо са се провалили — без това нулев резултат изглежда като успех.
+      failureReasons: reasons,
+    },
     rows,
   };
+
+  // Нулев резултат НЕ бива да затрива работещ анализ. Ако всичко е пропаднало при
+  // сваляне, запазваме стария файл и връщаме грешката, вместо да я скрием.
+  const prev = readMarket();
+  if (!rows.length && failed > 0) {
+    const summary = Object.entries(reasons).map(([k, n]) => `${k} × ${n}`).join("; ");
+    console.error(`[market] ПРОВАЛ: 0 позиции, ${failed} от ${notices.length} обявления не се свалиха — ${summary}`);
+    if (prev?.rows?.length) {
+      console.error(`[market] запазвам предишния анализ (${prev.rows.length} позиции) — файлът НЕ се пренаписва`);
+      return { ...prev, stats: { ...prev.stats, lastFailure: { at: new Date().toISOString(), failed, notices: notices.length, failureReasons: reasons } } };
+    }
+    mkdirSync(dirname(MARKET_PATH), { recursive: true });
+    writeFileSync(MARKET_PATH, JSON.stringify({ ...payload, error: `всички ${failed} обявления се провалиха при сваляне`, failureReasons: reasons }, null, 1));
+    return { ...payload, error: `всички ${failed} обявления се провалиха при сваляне` };
+  }
 
   mkdirSync(dirname(MARKET_PATH), { recursive: true });
   writeFileSync(MARKET_PATH, JSON.stringify(payload, null, 1));
   console.log(`[market] готово: ${rows.length} позиции, ${agg.kpi.lots} със сключен договор, ${agg.kpi.totalEur.toLocaleString("bg-BG")} € · ${Math.round(payload.stats.ms / 1000)} сек.`);
+  if (failed) console.log(`[market] ${failed} обявления не се свалиха: ${Object.entries(reasons).map(([k, n]) => `${k} × ${n}`).join("; ")}`);
   return payload;
 }
 
