@@ -28,10 +28,15 @@ function buildEmailHtml(due) {
       const dateCell = urgent
         ? `<b style="color:#c0392b">⚠️ ${(t.deadline || "").split(";")[0].slice(0, 10)}</b>`
         : `<b>${(t.deadline || "").split(";")[0].slice(0, 10)}</b>`;
+      // „Намерена по“ показва коя мрежа я е уловила. Служи за две неща: да се вижда
+      // дали дадена ключова дума върши работа, и да се забележи поръчка, стигнала до
+      // нас само по текста — такава CPV мрежата би изпуснала напълно.
+      const found = (t.foundBy || []).join(", ") || "—";
       return `<tr>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${dateCell} (след ${days} ${days === 1 ? "ден" : "дни"})</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.buyer || ""}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee">${t.score ?? ""} ${t.status === "DRAFTED" ? "📝" : ""}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #eee;font-size:12px;color:#555">${found}</td>
         <td style="padding:6px 10px;border-bottom:1px solid #eee"><a href="${t.pdfBg || "#"}">PDF</a></td>
       </tr>`;
     })
@@ -41,7 +46,7 @@ function buildEmailHtml(due) {
     <h2>Актуални подходящи обществени поръчки</h2>
     <p>${due.length} подходящи поръчки с още отворен срок${urgentCount ? ` (<b style="color:#c0392b">${urgentCount} спешни</b> — до 7 дни)` : ""}:</p>
     <table style="border-collapse:collapse;width:100%">
-      <tr style="text-align:left;background:#f5f5f5"><th style="padding:6px 10px">Срок</th><th style="padding:6px 10px">Възложител</th><th style="padding:6px 10px">Score</th><th style="padding:6px 10px">Досие</th></tr>
+      <tr style="text-align:left;background:#f5f5f5"><th style="padding:6px 10px">Срок</th><th style="padding:6px 10px">Възложител</th><th style="padding:6px 10px">Score</th><th style="padding:6px 10px">Намерена по</th><th style="padding:6px 10px">Досие</th></tr>
       ${rows}
     </table>
     <p style="color:#888;font-size:12px">Генерирано от infinita-tenders. 📝 = има готова чернова. Подаването в ЦАИС ЕОП изисква КЕП.</p>

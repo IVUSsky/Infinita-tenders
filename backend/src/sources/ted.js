@@ -1,8 +1,17 @@
 // TED (Tenders Electronic Daily) адаптер — основен източник на поръчки.
 // POST {TED_API_BASE}/notices/search — официален, БЕЗ API ключ.
 // Валидирано на 2026-06-29: полета и query синтаксис работят за buyer-country=BGR.
+// Допълнено на 2026-10-28: търсене по ТЕКСТ (FT ~) освен по CPV, защото CPV мрежата
+// изпуска над половината поръчки. Виж config/keywords.js за измерената семантика.
 
 const BASE = process.env.TED_API_BASE || "https://api.ted.europa.eu/v3";
+
+// TED реже с HTTP 429 при няколко заявки в секунда, а една обиколка по ключови думи
+// прави ~90 заявки. Паузата и повторенията не са излишни — без тях половината думи
+// се връщат като грешка и поръчките по тях изглеждат като несъществуващи.
+const THROTTLE_MS = Number(process.env.TED_THROTTLE_MS || 900);
+const MAX_RETRIES = Number(process.env.TED_MAX_RETRIES || 5);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Полета, потвърдени като валидни в TED Search API v1/v3.
 // (Внимание: суфиксите са задължителни — "deadline-receipt-tender" без "-date-lot" се отхвърля.)
@@ -43,13 +52,16 @@ function ymd(date) {
 }
 
 // Нормализира едно TED обявление към вътрешния ни модел.
-function normalize(n, cpv) {
+// `foundBy` казва КОЯ мрежа го е уловила — показва се в имейла, за да се вижда
+// дали дадена ключова дума върши работа или само генерира шум.
+function normalize(n, foundBy) {
   const links = n.links || {};
   const pub = n["publication-number"];
   return {
     id: pub, // напр. "3275-2026" — уникален в TED
     source: "ted",
-    cpv,
+    cpv: foundBy.kind === "cpv" ? foundBy.value : "",
+    foundBy: [foundBy.kind === "cpv" ? `CPV ${foundBy.value}` : `дума „${foundBy.value}“`],
     publicationNumber: pub,
     title: pickLang(n["notice-title"]),
     buyer: pickLang(n["buyer-name"]),
@@ -70,30 +82,65 @@ function normalize(n, cpv) {
   };
 }
 
-// Едно търсене за конкретен CPV код.
-async function searchByCpv(cpv, { sinceDays = 30, noticeType = "cn-standard", limit = 100 } = {}) {
-  const since = new Date(Date.now() - sinceDays * 86400000);
+// Една заявка към TED, с повторения при 429 и нарастващо изчакване.
+async function tedSearch(query, limit = 100) {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(`${BASE}/notices/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query, fields: FIELDS, limit, page: 1 }),
+    });
+    if (res.status === 429) {
+      if (attempt === MAX_RETRIES) throw new Error("TED 429 след всички повторения");
+      await sleep(2000 * (attempt + 1));
+      continue;
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`TED ${res.status}: ${text.slice(0, 300)}`);
+    }
+    return await res.json();
+  }
+}
+
+// Общите ограничители (държава, период, тип обявление) — еднакви за двете мрежи.
+function baseFilters({ sinceDays = 30, noticeType = "cn-standard" } = {}) {
   const parts = [
     "buyer-country=BGR",
-    `classification-cpv=${cpv}`,
-    `publication-date>=${ymd(since)}`,
+    `publication-date>=${ymd(new Date(Date.now() - sinceDays * 86400000))}`,
   ];
   if (noticeType) parts.push(`notice-type=${noticeType}`);
-  const query = parts.join(" AND ");
+  return parts;
+}
 
-  const res = await fetch(`${BASE}/notices/search`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query, fields: FIELDS, limit, page: 1 }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`TED ${res.status} за CPV ${cpv}: ${text.slice(0, 300)}`);
-  }
-  const data = await res.json();
-  const notices = (data.notices || []).map((n) => normalize(n, cpv));
+// Едно търсене за конкретен CPV код.
+async function searchByCpv(cpv, opts = {}) {
+  const query = [...baseFilters(opts), `classification-cpv=${cpv}`].join(" AND ");
+  const data = await tedSearch(query, opts.limit || 100);
+  const notices = (data.notices || []).map((n) => normalize(n, { kind: "cpv", value: cpv }));
   return { total: data.totalNoticeCount ?? notices.length, notices };
+}
+
+// Едно търсене по ключова дума в пълния текст на обявлението.
+// FT ~ ("дума") е точен съседен израз при няколко думи и се нормализира по число при
+// една — затова кавичките вътре в скобите са задължителни.
+async function searchByKeyword(term, opts = {}) {
+  const query = [...baseFilters(opts), `FT ~ ("${term}")`].join(" AND ");
+  const data = await tedSearch(query, opts.limit || 100);
+  const notices = (data.notices || []).map((n) => normalize(n, { kind: "keyword", value: term }));
+  return { total: data.totalNoticeCount ?? notices.length, notices };
+}
+
+// Слива ново обявление в картата, като пази всички мрежи, които са го уловили.
+function merge(byId, notices) {
+  for (const n of notices) {
+    const cur = byId.get(n.id);
+    if (!cur) { byId.set(n.id, n); continue; }
+    for (const f of n.foundBy) if (!cur.foundBy.includes(f)) cur.foundBy.push(f);
+    if (n.cpv && !String(cur.cpv).split(",").includes(n.cpv)) {
+      cur.cpv = cur.cpv ? `${cur.cpv},${n.cpv}` : n.cpv;
+    }
+  }
 }
 
 // Търси по списък CPV кодове и връща дедуплициран масив (по publication-number).
@@ -103,14 +150,44 @@ export async function fetchTedNotices(cpvCodes, opts = {}) {
   for (const cpv of cpvCodes) {
     try {
       const { total, notices } = await searchByCpv(cpv, opts);
-      stats.push({ cpv, total, returned: notices.length });
-      for (const n of notices) {
-        if (!byId.has(n.id)) byId.set(n.id, n);
-        else byId.get(n.id).cpv += `,${cpv}`; // поръчка, която мачва няколко наши кода
-      }
+      stats.push({ kind: "cpv", key: cpv, total, returned: notices.length });
+      merge(byId, notices);
     } catch (err) {
-      stats.push({ cpv, error: err.message });
+      stats.push({ kind: "cpv", key: cpv, error: err.message });
     }
+    await sleep(THROTTLE_MS);
   }
   return { notices: [...byId.values()], stats };
+}
+
+// Търси по списък ключови думи. Връща и статистика по дума, за да се вижда кои думи
+// работят — думата с 0 попадения месец след месец е или сгрешена, или излишна.
+export async function fetchTedByKeywords(terms, opts = {}) {
+  const byId = new Map();
+  const stats = [];
+  for (const term of terms) {
+    try {
+      const { total, notices } = await searchByKeyword(term, opts);
+      stats.push({ kind: "keyword", key: term, total, returned: notices.length });
+      merge(byId, notices);
+    } catch (err) {
+      stats.push({ kind: "keyword", key: term, error: err.message });
+    }
+    await sleep(THROTTLE_MS);
+  }
+  return { notices: [...byId.values()], stats };
+}
+
+// Обединява двете мрежи в един дедуплициран резултат.
+export async function fetchTedAll({ cpvCodes = [], keywords = [], ...opts } = {}) {
+  const byId = new Map();
+  const cpvRes = await fetchTedNotices(cpvCodes, opts);
+  merge(byId, cpvRes.notices);
+  const kwRes = await fetchTedByKeywords(keywords, opts);
+  merge(byId, kwRes.notices);
+  return {
+    notices: [...byId.values()],
+    stats: [...cpvRes.stats, ...kwRes.stats],
+    byNet: { cpv: cpvRes.notices.length, keyword: kwRes.notices.length },
+  };
 }

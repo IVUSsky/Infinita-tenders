@@ -26,11 +26,16 @@ export function categorySummary() {
 }
 
 // Категории, релевантни на даден CPV код — по ключови думи от config/cpv.js (lines).
+// Мачът е ПРЕФИКСЕН, защото обявлението носи специфичния код (33112200), а картата е
+// на ниво група (33110000). Точен мач оставяше класификатора без фокусиран срез.
 export function relevantSlice(cpvCodes = "") {
-  const codes = String(cpvCodes).split(",").map((s) => s.trim());
+  const codes = String(cpvCodes).split(",").map((s) => s.trim()).filter(Boolean);
   const keywords = new Set();
   for (const entry of INFINITA_CPV) {
-    if (codes.includes(entry.code)) entry.lines.forEach((l) => keywords.add(l.toLowerCase()));
+    const prefix = entry.code.replace(/0+$/, "");
+    if (codes.some((c) => c === entry.code || c.startsWith(prefix))) {
+      entry.lines.forEach((l) => keywords.add(l.toLowerCase()));
+    }
   }
   if (!keywords.size) return [];
 

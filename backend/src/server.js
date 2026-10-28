@@ -9,6 +9,8 @@ import { runClassifier } from "./agents/classifier.js";
 import { runDocumenter } from "./agents/documenter.js";
 import { upcomingDeadlines, runDeadlines } from "./agents/deadlines.js";
 import { buildMarket, readMarket } from "./analytics/market.js";
+import { KEYWORD_GROUPS, EXCLUDED_TERMS, activeKeywords } from "./config/keywords.js";
+import { SEARCH_CPV, INFINITA_CPV } from "./config/cpv.js";
 
 const app = express();
 app.use(cors());
@@ -31,6 +33,31 @@ app.get("/api/deadlines", (req, res) => {
 });
 
 app.get("/api/runs", (_req, res) => res.json({ runs: db.data.runs.slice(0, 50) }));
+
+// С какво точно търсим — групи ключови думи, CPV мрежи и отхвърлените думи с причината.
+// Отговаря на въпроса „по кои думи търсим“ без да се чете кодът.
+app.get("/api/keywords", (_req, res) => {
+  const active = activeKeywords();
+  // Последната обиколка — колко попадения е дала всяка дума реално.
+  const lastRun = db.data.runs.find((r) => r.type === "discovery");
+  const hits = Object.fromEntries(
+    (lastRun?.stats || []).filter((s) => s.kind === "keyword").map((s) => [s.key, s.error ? "грешка" : s.total]),
+  );
+  res.json({
+    cpvNets: SEARCH_CPV,
+    cpvCatalogMap: INFINITA_CPV,
+    broadEnabled: process.env.DISCOVERY_BROAD === "1",
+    activeCount: active.length,
+    groups: KEYWORD_GROUPS.map((g) => ({
+      group: g.group,
+      label: g.label,
+      terms: g.terms.map((t) => ({ term: t, lastRunHits: hits[t] ?? null })),
+      broad: (g.broad || []).map((t) => ({ term: t, lastRunHits: hits[t] ?? null, active: active.includes(t) })),
+    })),
+    excluded: EXCLUDED_TERMS,
+    lastRunAt: lastRun?.at || null,
+  });
+});
 
 // Черновата (markdown) за конкретна поръчка
 app.get("/api/tenders/:id/draft", (req, res) => {

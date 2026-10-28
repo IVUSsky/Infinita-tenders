@@ -13,7 +13,9 @@ export function buildPrompt(tender) {
     .filter((c) => c.count >= 3)
     .map((c) => `- ${c.name} (${c.count})`)
     .join("\n");
-  const slice = relevantSlice(tender.cpv);
+  // Кодовете ОТ ОБЯВЛЕНИЕТО, не кодът, с който сме търсили: откакто търсим с широкия
+  // 33000000, търсеният код не казва нищо за предмета.
+  const slice = relevantSlice(tender.cpvCodes || tender.cpv);
   const sliceTxt = slice.length
     ? slice
         .map((c) => `### ${c.name} (${c.count})\n${(c.samples || []).join("; ")}`)
@@ -24,6 +26,7 @@ export function buildPrompt(tender) {
     `Заглавие: ${tender.title}`,
     `Възложител: ${tender.buyer}`,
     `CPV: ${tender.cpvCodes || tender.cpv}`,
+    `Намерена по: ${(tender.foundBy || []).join(", ") || "—"}`,
     `Стойност: ${tender.estimatedValue || "—"} ${tender.currency || ""}`,
     `Срок: ${tender.deadline || "—"}`,
     `Описание: ${tender.description || "(няма в TED — виж PDF: " + (tender.pdfBg || "—") + ")"}`,

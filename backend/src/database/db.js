@@ -21,8 +21,11 @@ export async function upsertTenders(notices) {
   for (const n of notices) {
     if (existing.has(n.id)) {
       const cur = existing.get(n.id);
+      // Мрежите, които са я уловили, се натрупват през пусканията — иначе днешната
+      // обиколка изтрива с какво е била намерена преди.
+      const foundBy = [...new Set([...(cur.foundBy || []), ...(n.foundBy || [])])];
       // не пипай статус/оценка, ако вече са обработени
-      Object.assign(cur, { ...n, status: cur.status, score: cur.score, match: cur.match });
+      Object.assign(cur, { ...n, foundBy, status: cur.status, score: cur.score, match: cur.match });
     } else {
       existing.set(n.id, n);
       added++;
